@@ -21,6 +21,41 @@ func TestNewRecords(t *testing.T) {
 	}
 }
 
+func TestNewRecordsFromYAML(t *testing.T) {
+	cases := []struct {
+		name        string
+		mappingFile string
+		expected    map[string]versions
+		err         error
+	}{
+		{
+			name:        "valid yaml",
+			mappingFile: "test-fixtures/valid.yaml",
+			expected: map[string]versions{
+				"a": {
+					"v1": []*url.URL{parseURL(t, "a.v1")},
+					"v2": []*url.URL{parseURL(t, "a.v2")},
+				},
+				"b": {
+					"v1": []*url.URL{parseURL(t, "b.v1")},
+				},
+			},
+			err: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := NewRecordsFromYAML(tc.mappingFile)
+			if got, want := r.m, tc.expected; !reflect.DeepEqual(got, want) {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+			if got, want := err, tc.err; !reflect.DeepEqual(got, want) {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 func TestRecords_GetRecord(t *testing.T) {
 	cases := []struct {
 		name    string

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -15,7 +16,11 @@ import (
 	"github.com/mercari/grpc-http-proxy/source"
 )
 
+var mappingFile = flag.String("mapping-file", "", "mapping file for grpc service names "+
+	"to server host names. Kubernetes API will be used for service discovery if this is unspecified")
+
 func main() {
+	flag.Parse()
 	env, err := config.ReadFromEnv()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[ERROR] Failed to read environment variables: %s\n", err.Error())
@@ -27,20 +32,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	k8sConfig, err := rest.InClusterConfig()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Failed to create k8s config: %s\n", err)
-		os.Exit(1)
+	var s *http.Server
+	if *mappingFile == "" {
+		k8sConfig, err := rest.InClusterConfig()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[ERROR] Failed to create k8s config: %s\n", err)
+			os.Exit(1)
+		}
+		k8sClient, err := kubernetes.NewForConfig(k8sConfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[ERROR] Failed to create k8s client: %s\n", err)
+			os.Exit(1)
+		}
+		d := source.NewService(k8sClient, "", logger)
+		stopCh := make(chan struct{})
+		d.Run(stopCh)
+		s = http.New(env.Token, d, logger)
+	} else {
+		d := source.NewStatic(logger, *mappingFile)
+		s = http.New(env.Token, d, logger)
 	}
-	k8sClient, err := kubernetes.NewForConfig(k8sConfig)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Failed to create k8s client: %s\n", err)
-		os.Exit(1)
-	}
-	d := source.NewService(k8sClient, "", logger)
-	stopCh := make(chan struct{})
-	d.Run(stopCh)
-	s := http.New(env.Token, d, logger)
 	logger.Info("starting grpc-http-proxy",
 		zap.String("log_level", env.LogLevel),
 		zap.Int16("port", env.Port),
